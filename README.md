@@ -2,7 +2,7 @@
 
 A web dashboard that monitors the health of one astronaut during a space mission, using simulated data that changes over time.
 
-**Live demo:** https://YOUR-USERNAME.github.io/astronaut-health-monitor/
+**Live demo:** https://anagha37-tech.github.io/astronaut-health-monitor/
 
 ## Features
 - 5 health parameters: heart rate, oxygen level, body temperature, sleep duration, exercise time
