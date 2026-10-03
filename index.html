@@ -49,6 +49,9 @@ footer{color:var(--mute);font-size:.75rem;text-align:center;margin-top:14px}
   </header>
 
   <div id="banner" class="banner NORMAL">OVERALL STATUS: NORMAL</div>
+  <div style="text-align:right;margin-bottom:12px">
+    <button onclick="simulateCritical()" style="background:#3d1214;color:#ff4d4f;border:1px solid #ff4d4f;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600">⚠ Simulate Critical Event</button>
+  </div>
   <div class="grid" id="grid"></div>
 
   <div class="log"><h2>Alert Log</h2><ul id="log"><li class="sub">No alerts yet.</li></ul></div>
@@ -67,7 +70,8 @@ const P = [
 ];
 const RANK = {NORMAL:0, WARNING:1, CRITICAL:2};
 const hist = {}; P.forEach(p => hist[p.id] = []);
-let missionMin = 0, lastStatus = {};
+let missionMin = 0, lastStatus = {}, forceCrit = false;
+function simulateCritical(){ forceCrit = true; tick(); }
 
 const grid = document.getElementById('grid');
 P.forEach(p => {
@@ -101,6 +105,8 @@ function tick(){
     const home = (p.normal[0] + Math.min(p.normal[1], p.normal[0]+ (p.normal[1]-p.normal[0])/2)) / 1;
     p.v += (((p.normal[0]+Math.min(p.normal[1],p.max))/2) - p.v) * 0.06;
     p.v = Math.max(p.min, Math.min(p.max, p.v));
+    if (p.id === 'o2' && forceCrit) { p.v = 86 + Math.random()*3; forceCrit = false; }
+    p.v = +p.v.toFixed(p.dec);
 
     const st = statusOf(p, p.v);
     if (RANK[st] > RANK[overall]) overall = st;
