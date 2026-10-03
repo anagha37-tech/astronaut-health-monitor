@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astronaut Health Monitor</title>
+<style>
+:root{--bg:#0b1020;--card:#141b34;--text:#e8ecf8;--mute:#8b95b8;--ok:#2ecc71;--warn:#f5b301;--crit:#ff4d4f}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);padding:20px}
+.wrap{max-width:1000px;margin:auto}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}
+h1{margin:0;font-size:1.4rem}
+.sub{color:var(--mute);font-size:.9rem}
+.clock{background:var(--card);padding:10px 16px;border-radius:10px;text-align:right}
+.clock b{font-size:1.2rem;font-variant-numeric:tabular-nums}
+.banner{padding:16px;border-radius:12px;font-weight:700;font-size:1.1rem;margin-bottom:16px;text-align:center}
+.banner.NORMAL{background:#12331f;color:var(--ok);border:1px solid var(--ok)}
+.banner.WARNING{background:#3a2f08;color:var(--warn);border:1px solid var(--warn)}
+.banner.CRITICAL{background:#3d1214;color:var(--crit);border:1px solid var(--crit);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.6}}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--card);border-radius:12px;padding:16px;border-left:6px solid var(--ok)}
+.card.WARNING{border-color:var(--warn)}.card.CRITICAL{border-color:var(--crit)}
+.top{display:flex;justify-content:space-between;color:var(--mute);font-size:.9rem}
+.badge{font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--ok);color:#000}
+.WARNING .badge{background:var(--warn)}.CRITICAL .badge{background:var(--crit);color:#fff}
+.val{font-size:2.2rem;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
+.val small{font-size:1rem;color:var(--mute);font-weight:400}
+.range{color:var(--mute);font-size:.75rem}
+svg{width:100%;height:40px;margin-top:6px}
+polyline{fill:none;stroke:#6ea8fe;stroke-width:2}
+.log{background:var(--card);border-radius:12px;padding:16px;margin-top:16px}
+.log h2{margin:0 0 8px;font-size:1rem}
+.log ul{list-style:none;margin:0;padding:0;max-height:160px;overflow:auto;font-size:.85rem}
+.log li{padding:4px 0;border-bottom:1px solid #222a4a}
+.c{color:var(--crit)}.w{color:var(--warn)}
+footer{color:var(--mute);font-size:.75rem;text-align:center;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🚀 Astronaut Health Monitor</h1>
+      <div class="sub">Crew: Cmdr. A. Rivera · Station: ISS-Sim · Simulated data</div>
+    </div>
+    <div class="clock"><div class="sub">MISSION TIME</div><b id="clock">Day 1 · 00:00</b></div>
+  </header>
+
+  <div id="banner" class="banner NORMAL">OVERALL STATUS: NORMAL</div>
+  <div class="grid" id="grid"></div>
+
+  <div class="log"><h2>Alert Log</h2><ul id="log"><li class="sub">No alerts yet.</li></ul></div>
+  <footer>Data refreshes every 2 seconds · 1 real second = 10 mission minutes</footer>
+</div>
+
+<script>
+// Each parameter: start value, min/max bounds, drift step, thresholds.
+// Status logic: inside "normal" range -> NORMAL; inside "warn" range -> WARNING; else CRITICAL.
+const P = [
+  {id:'hr',   name:'Heart Rate',   unit:'bpm',  v:72,  min:35,  max:140, step:4,   dec:0, normal:[50,100],  warn:[40,120],  txt:'Normal 50–100'},
+  {id:'o2',   name:'Oxygen Level', unit:'%',    v:97,  min:84,  max:100, step:1.2, dec:0, normal:[95,101],  warn:[90,101],  txt:'Normal ≥ 95 · Critical < 90'},
+  {id:'temp', name:'Body Temp',    unit:'°C',   v:36.8,min:34.5,max:39.5,step:.25, dec:1, normal:[36.1,37.5],warn:[35.5,38.5],txt:'Normal 36.1–37.5'},
+  {id:'sleep',name:'Sleep Duration',unit:'hrs', v:7.2, min:3,   max:9,   step:.3,  dec:1, normal:[7,10],    warn:[5,10],    txt:'Normal ≥ 7 · Critical < 5'},
+  {id:'ex',   name:'Exercise Time',unit:'min',  v:100, min:20,  max:180, step:8,   dec:0, normal:[90,300],  warn:[45,300],  txt:'Normal ≥ 90 · Critical < 45'}
+];
+const RANK = {NORMAL:0, WARNING:1, CRITICAL:2};
+const hist = {}; P.forEach(p => hist[p.id] = []);
+let missionMin = 0, lastStatus = {};
+
+const grid = document.getElementById('grid');
+P.forEach(p => {
+  grid.insertAdjacentHTML('beforeend',
+   `<div class="card NORMAL" id="c-${p.id}">
+      <div class="top"><span>${p.name}</span><span class="badge" id="b-${p.id}">NORMAL</span></div>
+      <div class="val"><span id="v-${p.id}">--</span> <small>${p.unit}</small></div>
+      <div class="range">${p.txt}</div>
+      <svg viewBox="0 0 200 40" preserveAspectRatio="none"><polyline id="s-${p.id}" points=""/></svg>
+    </div>`);
+});
+
+function statusOf(p, v){
+  if (v >= p.normal[0] && v <= p.normal[1]) return 'NORMAL';
+  if (v >= p.warn[0] && v <= p.warn[1]) return 'WARNING';
+  return 'CRITICAL';
+}
+
+function tick(){
+  missionMin += 20; // advance mission clock
+  const d = Math.floor(missionMin/1440)+1, h = Math.floor(missionMin%1440/60), m = missionMin%60;
+  document.getElementById('clock').textContent =
+    `Day ${d} · ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+
+  let overall = 'NORMAL';
+  P.forEach(p => {
+    // random walk, with a small chance of a sudden dip/spike so alerts actually trigger
+    p.v += (Math.random()-0.5)*2*p.step;
+    if (Math.random() < 0.06) p.v += (Math.random()-0.5)*6*p.step;
+    // gentle pull back toward a healthy value
+    const home = (p.normal[0] + Math.min(p.normal[1], p.normal[0]+ (p.normal[1]-p.normal[0])/2)) / 1;
+    p.v += (((p.normal[0]+Math.min(p.normal[1],p.max))/2) - p.v) * 0.06;
+    p.v = Math.max(p.min, Math.min(p.max, p.v));
+
+    const st = statusOf(p, p.v);
+    if (RANK[st] > RANK[overall]) overall = st;
+
+    document.getElementById('v-'+p.id).textContent = p.v.toFixed(p.dec);
+    document.getElementById('b-'+p.id).textContent = st;
+    document.getElementById('c-'+p.id).className = 'card ' + st;
+
+    const h2 = hist[p.id]; h2.push(p.v); if (h2.length > 30) h2.shift();
+    const lo = Math.min(...h2), hi = Math.max(...h2), r = (hi-lo)||1;
+    document.getElementById('s-'+p.id).setAttribute('points',
+      h2.map((x,i)=>`${(i/29)*200},${38-((x-lo)/r)*36}`).join(' '));
+
+    // log only when status gets worse
+    if (st !== 'NORMAL' && st !== lastStatus[p.id]) {
+      const cls = st==='CRITICAL' ? 'c' : 'w';
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="${cls}">[${st}]</span> ${p.name} = ${p.v.toFixed(p.dec)} ${p.unit} · Day ${d} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      const log = document.getElementById('log');
+      if (log.firstChild && log.firstChild.className === 'sub') log.innerHTML = '';
+      log.prepend(li);
+    }
+    lastStatus[p.id] = st;
+  });
+
+  const b = document.getElementById('banner');
+  b.className = 'banner ' + overall;
+  b.textContent = overall === 'CRITICAL' ? '🚨 CRITICAL ALERT — IMMEDIATE ATTENTION REQUIRED'
+                : overall === 'WARNING'  ? '⚠️ WARNING — MONITOR CLOSELY'
+                : 'OVERALL STATUS: NORMAL';
+}
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>
